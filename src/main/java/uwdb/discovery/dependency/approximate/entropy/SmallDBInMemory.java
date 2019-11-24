@@ -24,7 +24,7 @@ public class SmallDBInMemory {
 	static final String SEP = ",";
 	   // JDBC driver name and database URL 
 	   static final String JDBC_DRIVER = "org.h2.Driver";   
-	   static final String DB_URL = "jdbc:h2:mem:db;MVCC=true";  
+	   static final String DB_URL = "jdbc:h2:mem:db;LOCK_TIMEOUT=10000";  
 	   
 	   static final String HASH_FUNCTION = "'SHA256'" ; //"'SHA2_256'";
 	   	   

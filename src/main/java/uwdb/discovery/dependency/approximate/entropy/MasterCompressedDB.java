@@ -230,42 +230,43 @@ public class MasterCompressedDB {
 	//delete all DB tables
 	public static void shutdown() {
 		System.out.println(Thread.currentThread().getId() + ": calling Master shutdown");
-		 try {			  
-			 Connection DBConnection = CompressedDB.getDBConnection();
-			  ResultSet rs = DBConnection.getMetaData().getTables(null, null,
-					  "TBL_%", null);		
-			  ResultSet rsTemp = DBConnection.getMetaData().getTables(null, null,
-					  "TEMP%", null);	
+		CompressedDB.shutdown();
+		//  try {			  
+		// 	 Connection DBConnection = CompressedDB.getDBConnection();
+		// 	  ResultSet rs = DBConnection.getMetaData().getTables(null, null,
+		// 			  "TBL_%", null);		
+		// 	  ResultSet rsTemp = DBConnection.getMetaData().getTables(null, null,
+		// 			  "TEMP%", null);	
 			  
-			  Statement stmtDeleteTEMPTables = DBConnection.createStatement();
-			  Statement stmtDeleteTables = DBConnection.createStatement();
-			  int numTblsRemoved =0 ; 
-			  int numTempTblsRemoved=0;
-			  while(rs.next()) {
-				  String tblName = rs.getString(3);
-				  String sql = "DROP TABLE " + tblName;
-				  stmtDeleteTables.addBatch(sql);
-				  numTblsRemoved++;
-			  }
-			  while(rsTemp.next()) {
-				  String tblName = rs.getString(3);
-				  String sql = "DROP TABLE " + tblName;
-				  stmtDeleteTEMPTables.addBatch(sql);
-				  numTempTblsRemoved++;
-			  }
-			  if(numTempTblsRemoved > 0)
-				  stmtDeleteTEMPTables.executeBatch();
-			  DBConnection.commit();
+		// 	  Statement stmtDeleteTEMPTables = DBConnection.createStatement();
+		// 	  Statement stmtDeleteTables = DBConnection.createStatement();
+		// 	  int numTblsRemoved =0 ; 
+		// 	  int numTempTblsRemoved=0;
+		// 	  while(rs.next()) {
+		// 		  String tblName = rs.getString(3);
+		// 		  String sql = "DROP TABLE " + tblName;
+		// 		  stmtDeleteTables.addBatch(sql);
+		// 		  numTblsRemoved++;
+		// 	  }
+		// 	  while(rsTemp.next()) {
+		// 		  String tblName = rs.getString(3);
+		// 		  String sql = "DROP TABLE " + tblName;
+		// 		  stmtDeleteTEMPTables.addBatch(sql);
+		// 		  numTempTblsRemoved++;
+		// 	  }
+		// 	  if(numTempTblsRemoved > 0)
+		// 		  stmtDeleteTEMPTables.executeBatch();
+		// 	  DBConnection.commit();
 			  
-			  if(numTblsRemoved > 0)
-				  stmtDeleteTables.executeBatch();
+		// 	  if(numTblsRemoved > 0)
+		// 		  stmtDeleteTables.executeBatch();
 			  
-			  DBConnection.commit();
-		  }
-		  catch (SQLException e) {
-			  // TODO Auto-generated catch block
-			  e.printStackTrace();			  
-		  }		
+		// 	  DBConnection.commit();
+		//   }
+		//   catch (SQLException e) {
+		// 	  // TODO Auto-generated catch block
+		// 	  e.printStackTrace();			  
+		//   }		
 	}
 	private void dropTblByName(String tblName) {
 		  try {
