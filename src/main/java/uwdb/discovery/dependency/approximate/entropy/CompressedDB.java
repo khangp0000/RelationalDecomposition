@@ -191,7 +191,7 @@ public class CompressedDB {
 		sb.append(hc);
 
 		for (int i = attSet.nextAttribute(0); i >= 0; i = attSet.nextAttribute(i + 1)) {
-			sb.append(i);
+			sb.append(i).append('_');
 		}
 		return "TBL_" + sb.toString();
 	}
@@ -204,7 +204,7 @@ public class CompressedDB {
 		sb.append(hc);
 
 		for (int i = attSet.nextAttribute(0); i >= 0; i = attSet.nextAttribute(i + 1)) {
-			sb.append(i);
+			sb.append(i).append('_');
 		}
 		return "TBL_CNT_" + sb.toString();
 	}
