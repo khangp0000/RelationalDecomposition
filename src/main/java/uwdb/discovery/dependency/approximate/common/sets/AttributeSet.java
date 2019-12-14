@@ -28,15 +28,13 @@ public class AttributeSet implements IAttributeSet {
 
 	public AttributeSet(int numAttributes) {
 		this.numAttributes = numAttributes;
-		this.set = new BitSet();
+		this.set = new BitSet(numAttributes);
 		currIterator = 0;
 	}
 
 	public IAttributeSet clone() {
 		long startTime = System.currentTimeMillis();
-		AttributeSet other = new AttributeSet(numAttributes);
-		other.set.or(this.set);
-		currIterator = 0;
+		AttributeSet other = new AttributeSet(this);
 		cloneTime += (System.currentTimeMillis() - startTime);
 		return other;
 	}
@@ -168,7 +166,8 @@ public class AttributeSet implements IAttributeSet {
 //        return true;
 
 		if (obj instanceof AttributeSet) {
-			return this.set.equals(((AttributeSet) obj).set);
+			AttributeSet o = (AttributeSet) obj;
+			return o.numAttributes == o.numAttributes && this.set.equals(o.set);
 		}
 		return false;
 	}
@@ -218,9 +217,17 @@ public class AttributeSet implements IAttributeSet {
 	
 	public List<Integer> setIdxList() {
 		List<Integer> ret = new ArrayList<>();
-		for (int i = set.nextSetBit(0); i >= 0; i = set.nextSetBit(i+1)) {
+		for (int i = set.nextSetBit(0); i >= 0 && i < numAttributes; i = set.nextSetBit(i+1)) {
 			ret.add(i);
 		}
 		return ret;
+	}
+
+	public String bitString() {
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < numAttributes; ++i) {
+			sb.append(set.get(i) ? 1 : 0);
+		}
+		return sb.toString();
 	}
 }

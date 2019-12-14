@@ -36,4 +36,5 @@ public interface IAttributeSet extends Iterator<Integer>{
     int nextAttribute(int afterIndex);
     
     void resetIterator();
+    String bitString();
 }

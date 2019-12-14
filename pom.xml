@@ -38,6 +38,13 @@
       <artifactId>h2</artifactId>
       <version>1.4.200</version>
     </dependency>
+    
+    <!-- https://mvnrepository.com/artifact/com.opencsv/opencsv -->
+    <dependency>
+      <groupId>com.opencsv</groupId>
+      <artifactId>opencsv</artifactId>
+      <version>5.0</version>
+    </dependency>
 
   </dependencies>
 
