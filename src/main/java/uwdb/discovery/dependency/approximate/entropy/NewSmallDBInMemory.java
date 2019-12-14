@@ -3,10 +3,10 @@ package uwdb.discovery.dependency.approximate.entropy;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -19,11 +19,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import javax.management.RuntimeErrorException;
 import com.opencsv.CSVParser;
 import uwdb.discovery.dependency.approximate.common.sets.AttributeSet;
 import uwdb.discovery.dependency.approximate.common.sets.IAttributeSet;
-import uwdb.discovery.dependency.approximate.entropy.SmallDBInMemory.decompositionSize;
 
 public class NewSmallDBInMemory {
 
@@ -45,8 +43,11 @@ public class NewSmallDBInMemory {
     public static String TBL_NAME = "CSVTblEncoding";
 
     // Database information
-    public final int numTuples;
-    public final int numCells;
+    public final long numTuples;
+    public final long numCells;
+
+    // Running or not
+    private boolean running;
 
     public Connection conn = null;
     private String db_url;
@@ -59,10 +60,11 @@ public class NewSmallDBInMemory {
         initDB(file, numAtt, hasHeader);
         numTuples = numTuples();
         numCells = numTuples * numAtt;
+        running = false;
     }
 
     private void initDB(String file, int numAtt, boolean hasHeader) throws Exception {
-        Statement st = conn.createStatement();
+        Statement st = createStatement();
 
         StringBuilder sb = new StringBuilder("CREATE TABLE ").append(TBL_NAME).append(" (");
         String sql = IntStream.range(0, numAtt).mapToObj(i -> "att" + i + " INT NOT NULL")
@@ -125,25 +127,51 @@ public class NewSmallDBInMemory {
         }
     }
 
-    private int numTuples() throws SQLException {
-        Statement st = conn.createStatement();
+    private long numTuples() throws SQLException {
+        Statement st = createStatement();
         ResultSet rs =
                 st.executeQuery("SELECT COUNT(*) FROM (SELECT DISTINCT * FROM " + TBL_NAME + ");");
         if (!rs.next()) {
             throw new IllegalStateException("COUNT always return 1 row");
         }
-        int ret = rs.getInt(1);
+        long ret = rs.getLong(1);
         st.close();
         return ret;
     }
 
-    public Connection getDBConnection() {
+    public synchronized Connection getDBConnection() {
         return conn;
     }
 
-    public void close() throws SQLException {
+    public synchronized Statement createStatement() throws SQLException {
+        if (conn == null) {
+            throw new IllegalStateException("DB is closed");
+        }
+        return conn.createStatement();
+    }
+
+    public synchronized void close() throws SQLException {
         conn.close();
         conn = null;
+    }
+
+    public synchronized void stop() throws SQLException {
+        if (conn == null) {
+            throw new IllegalStateException("DB is closed");
+        }
+        Connection temp = DriverManager.getConnection(db_url, USER, PASS);
+        conn.close();
+        conn = temp;
+        Statement st = createStatement();
+        ResultSet rs = conn.getMetaData().getTables(null, null, "CLUSTER_%", null);
+        List<String> cl_tables = new ArrayList<>();
+        while (rs.next()) {
+            cl_tables.add(rs.getString(3));
+        }
+        if (!cl_tables.isEmpty())
+            st.executeUpdate(
+                    cl_tables.stream().collect(Collectors.joining(",", "DROP TABLE ", ";")));
+        st.close();
     }
 
     private static String nameTableOnAttSet(IAttributeSet attSet, String prefix) {
@@ -156,106 +184,137 @@ public class NewSmallDBInMemory {
         return nameTableOnAttSet(attSet, "CLUSTER_");
     }
 
-    private int generateProjectionTables(AttributeSet attSet) throws SQLException {
-        Statement st = conn.createStatement();
+    private long generateProjectionTables(AttributeSet attSet) throws SQLException {
+        Statement st = createStatement();
         String clusterTableName = clusterTableOnAttSet(attSet);
         st.executeUpdate(new StringBuilder("CREATE TABLE ").append(clusterTableName)
                 .append(" AS (SELECT DISTINCT ")
                 .append(attSet.setIdxList().stream().map(i -> "att" + i)
                         .collect(Collectors.joining(",")))
-                .append(",1 AS cnt FROM ").append(TBL_NAME).append(");").toString());
+                .append(",CAST(1 AS BIGINT) AS cnt FROM ").append(TBL_NAME).append(");")
+                .toString());
 
         ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM " + clusterTableName);
         if (!rs.next()) {
             throw new IllegalStateException("COUNT always return 1 row");
         }
-        int ret = rs.getInt(1);
+        long ret = rs.getLong(1);
         st.close();
         return ret;
     }
 
-    public int spuriousTuples(Set<IAttributeSet> clustersSet, decompositionSize ds)
+    public DecompositionInfo proccessDecomposition(Set<IAttributeSet> clustersSet)
             throws SQLException {
-        List<IAttributeSet> clusters = new ArrayList<>(clustersSet);
-        int[] clustersSize = clusters.stream().mapToInt(a -> {
-            try {
-                return generateProjectionTables((AttributeSet) a);
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
+        synchronized (this) {
+            if (running) {
+                return null;
             }
-        }).toArray();
-
-        ds.largestRelation = 0;
-        ds.smallestRelation = Integer.MAX_VALUE;
-        ds.totalTuplesInDecomposition = 0;
-        ds.totalCellsInDecomposition = 0;
-        for (int i = 0; i < clustersSize.length; ++i) {
-            ds.largestRelation = Math.max(ds.largestRelation, clustersSize[i]);
-            ds.smallestRelation = Math.min(ds.largestRelation, clustersSize[i]);
-            ds.totalTuplesInDecomposition += clustersSize[i];
-            ds.largestRelation = clustersSize[i] * clusters.get(i).cardinality();
+            running = true;
         }
+        try {
+            int size = 0;
+            List<IAttributeSet> clusters = new ArrayList<>(clustersSet);
+
+            DecompositionInfo dInfo = new DecompositionInfo();
+
+            if ((size = clusters.size()) == 0) {
+                return dInfo;
+            }
 
 
-                return spuriousTuples(clusters);
-    }
-
-    private int spuriousTuples(List<IAttributeSet> clusters) throws SQLException {
-        int size = 0;
-        Statement st = conn.createStatement();
-        while ((size = clusters.size()) > 1) {
             IAttributeSet c1 = clusters.remove(size - 1);
             String c1Name = clusterTableOnAttSet(c1);
 
-            IAttributeSet c2 = clusters.remove(size - 2);
-            String c2Name = clusterTableOnAttSet(c2);
+            dInfo.add(c1, generateProjectionTables((AttributeSet) c1));
+            Statement st = createStatement();
+            while ((size = clusters.size()) > 0) {
 
-            IAttributeSet newCluster = c1.union(c2);
-            String newClusterName = clusterTableOnAttSet(newCluster);
+                IAttributeSet c2 = clusters.remove(size - 1);
+                String c2Name = clusterTableOnAttSet(c2);
 
-            IAttributeSet group = new AttributeSet(c1.length());
+                dInfo.add(c2, generateProjectionTables((AttributeSet) c2));
 
-            clusters.stream().forEach(a -> group.or(a));
-            group.intersectNonConst(newCluster);
+                IAttributeSet newCluster = c1.union(c2);
+                String newClusterName = clusterTableOnAttSet(newCluster);
 
-            String groupString = ((AttributeSet) group).setIdxList().stream().map(i -> "att" + i)
-                    .collect(Collectors.joining(","));
+                IAttributeSet group = new AttributeSet(c1.length());
 
-            StringBuilder sb = new StringBuilder("CREATE TABLE TMP").append(newClusterName)
-                    .append(" AS (SELECT SUM(").append(c1Name).append(".cnt1").append("*")
-                    .append(c2Name).append(".cnt2").append(") AS cnt");
+                clusters.stream().forEach(a -> group.or(a));
+                group.intersectNonConst(newCluster);
 
-            if (!groupString.isEmpty()) {
-                sb.append(",").append(groupString);
+                String groupString = ((AttributeSet) group).setIdxList().stream()
+                        .map(i -> "att" + i).collect(Collectors.joining(","));
+
+                StringBuilder sb = new StringBuilder("CREATE TABLE TMP").append(newClusterName)
+                        .append(" AS (SELECT SUM(").append(c1Name).append(".cnt1").append("*")
+                        .append(c2Name).append(".cnt2").append(") AS cnt");
+
+                if (!groupString.isEmpty()) {
+                    sb.append(",").append(groupString);
+                }
+
+                sb.append(" FROM ").append(c1Name).append(" NATURAL JOIN ").append(c2Name);
+
+                if (!groupString.isEmpty()) {
+                    sb.append(" GROUP BY ").append(groupString);
+                }
+
+                sb.append(");");
+
+
+                st.addBatch("ALTER TABLE " + c1Name + " ALTER COLUMN cnt RENAME TO cnt1;");
+                st.addBatch("ALTER TABLE " + c2Name + " ALTER COLUMN cnt RENAME TO cnt2;");
+                st.addBatch(sb.toString());
+                st.addBatch("DROP TABLE " + c1Name + ";");
+                st.addBatch("DROP TABLE " + c2Name + ";");
+                st.addBatch(
+                        "ALTER TABLE TMP" + newClusterName + " RENAME TO " + newClusterName + ";");
+
+                st.executeBatch();
+
+                c1 = newCluster;
+                c1Name = newClusterName;
             }
 
-            sb.append(" FROM ").append(c1Name).append(" NATURAL JOIN ").append(c2Name);
 
-            if (!groupString.isEmpty()) {
-                sb.append(" GROUP BY ").append(groupString);
+            ResultSet rs = st.executeQuery("SELECT SUM(cnt) FROM " + c1Name);
+            if (!rs.next()) {
+                throw new IllegalStateException("COUNT always return 1 row");
             }
-
-            sb.append(");");
-
-
-            st.executeUpdate("ALTER TABLE " + c1Name + " ALTER COLUMN cnt RENAME TO cnt1;");
-            st.executeUpdate("ALTER TABLE " + c2Name + " ALTER COLUMN cnt RENAME TO cnt2;");
-            st.executeUpdate(sb.toString());
+            int ret = rs.getInt(1);
             st.executeUpdate("DROP TABLE " + c1Name + ";");
-            st.executeUpdate("DROP TABLE " + c2Name + ";");
-            st.executeUpdate(
-                    "ALTER TABLE TMP" + newClusterName + " RENAME TO " + newClusterName + ";");
-            clusters.add(newCluster);
+            st.close();
+
+            dInfo.spuriousTuples = ret - numTuples;
+            return dInfo;
+        } finally {
+            synchronized (this) {
+                running = false;
+            }
+        }
+    }
+
+    public static class DecompositionInfo {
+        public long smallestRelation;
+        public long largestRelation;
+        public long totalTuplesInDecomposition;
+        public long totalCellsInDecomposition;
+        public long spuriousTuples;
+
+        public DecompositionInfo() {
+            smallestRelation = Long.MAX_VALUE;
+            largestRelation = 0;
+            totalTuplesInDecomposition = 0;
+            totalCellsInDecomposition = 0;
+            spuriousTuples = -1;
         }
 
-        ResultSet rs =
-                st.executeQuery("SELECT SUM(cnt) FROM " + clusterTableOnAttSet(clusters.get(0)));
-        if (!rs.next()) {
-            throw new IllegalStateException("COUNT always return 1 row");
+        public void add(IAttributeSet att, long tuples_cnt) {
+            largestRelation = Math.max(smallestRelation, tuples_cnt);
+            smallestRelation = Math.min(largestRelation, tuples_cnt);
+            totalTuplesInDecomposition += tuples_cnt;
+            totalCellsInDecomposition += tuples_cnt * att.cardinality();
         }
-        int ret = rs.getInt(1);
-        st.close();
-        return ret - numTuples;
     }
 
     public static void main(String[] args) throws Exception {
@@ -277,24 +336,36 @@ public class NewSmallDBInMemory {
         clus.add(new AttributeSet(new int[] {12, 13}, 15));
         clus.add(new AttributeSet(new int[] {13, 14}, 15));
 
-        decompositionSize ds = new decompositionSize();
+        // Thread thread = new Thread(() -> {
         long start = System.currentTimeMillis();
-        System.out.println(db.spuriousTuples(clus, ds));
+        try {
+            System.out.println(db.proccessDecomposition(clus).spuriousTuples);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         System.out.println((System.currentTimeMillis() - start) + " ms");
-        // System.out.println(db.conn.createStatement().executeUpdate(
-        // "CREATE VIEW CL AS (SELECT DISTINCT ATT0, ATT1 FROM " + TBL_NAME + ")"));
-        // ResultSet rs = db.conn.createStatement().executeQuery("SELECT * FROM CL");
-        // ResultSetMetaData rsmd = rs.getMetaData();
-        // System.out.println("querying SELECT * FROM XXX");
-        // int columnsNumber = rsmd.getColumnCount();
-        // while (rs.next()) {
-        // for (int i = 1; i <= columnsNumber; i++) {
-        // if (i > 1)
-        // System.out.print(", ");
-        // String columnValue = rs.getString(i);
-        // System.out.print(columnValue + " " + rsmd.getColumnName(i));
+        // });
+        // thread.start();
+        // BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        // reader.readLine();
+        // long start = System.currentTimeMillis();
+        // try {
+        // System.out.println(db.proccessDecomposition(clus).spuriousTuples);
+        // } catch (Exception e) {
+        // e.printStackTrace();
         // }
-        // System.out.println("");
+        // System.out.println((System.currentTimeMillis() - start) + " ms");
+        // reader.readLine();
+        // db.stop();
+        // reader.readLine();
+        // start = System.currentTimeMillis();
+        // try {
+        // System.out.println(db.proccessDecomposition(clus).spuriousTuples);
+        // } catch (Exception e) {
+        // e.printStackTrace();
         // }
+        // System.out.println((System.currentTimeMillis() - start) + " ms");
+
     }
 }
+
