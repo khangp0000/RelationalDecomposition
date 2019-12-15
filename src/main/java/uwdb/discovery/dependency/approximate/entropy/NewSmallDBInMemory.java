@@ -60,7 +60,8 @@ public class NewSmallDBInMemory {
     private int cacheMax;
 
     public NewSmallDBInMemory(String file, int numAtt, boolean hasHeader) throws Exception {
-        this(file, numAtt, hasHeader, Math.max(Runtime.getRuntime().availableProcessors() - 1, 1), 100);
+        this(file, numAtt, hasHeader, Math.max(Runtime.getRuntime().availableProcessors() - 1, 1),
+                100);
     }
 
     public NewSmallDBInMemory(String file, int numAtt, boolean hasHeader, int numThread,
@@ -229,7 +230,7 @@ public class NewSmallDBInMemory {
         return ret;
     }
 
-    public synchronized void close() throws SQLException {
+    public synchronized void close() {
         for (ClustersConsumer cc : threads) {
             cc.close();
         }
@@ -427,10 +428,14 @@ public class NewSmallDBInMemory {
             return ret;
         }
 
-        public synchronized void close() throws SQLException {
-            if (conn != null) {
-                conn.close();
-                conn = null;
+        public synchronized void close() {
+            try {
+                if (conn != null) {
+                    conn.close();
+                    conn = null;
+                }
+            } catch (SQLException e) {
+            } finally {
                 interrupt();
             }
         }
