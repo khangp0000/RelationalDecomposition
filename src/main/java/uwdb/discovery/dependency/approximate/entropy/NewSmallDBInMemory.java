@@ -266,9 +266,9 @@ public class NewSmallDBInMemory {
                             if (dRunStatus.status == DecompositionRunStatus.StatusCode.PENDING) {
                                 dRunStatus.status = DecompositionRunStatus.StatusCode.RUNNING;
                                 dRunStatus.thread = this;
-                                dRunStatus.notifyAll();
                                 run = true;
                             }
+                            dRunStatus.notifyAll();
                         }
                     }
 
