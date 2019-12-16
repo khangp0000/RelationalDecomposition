@@ -4,7 +4,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
+// import java.io.InputStreamReader;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -28,7 +28,7 @@ import uwdb.discovery.dependency.approximate.common.sets.AttributeSet;
 import uwdb.discovery.dependency.approximate.common.sets.IAttributeSet;
 import uwdb.discovery.dependency.approximate.entropy.NewSmallDBInMemory.DecompositionRunStatus.StatusCode;
 
-public class NewSmallDBInMemory implements AutoCloseable{
+public class NewSmallDBInMemory implements AutoCloseable {
     public static class CanceledJobException extends Exception {
         private static final long serialVersionUID = 1L;
     }
@@ -344,8 +344,12 @@ public class NewSmallDBInMemory implements AutoCloseable{
                 clusters.stream().forEach(a -> group.or(a));
                 group.intersectNonConst(newCluster);
 
+                final String temp1 = c1Name;
+                final String temp2 = c2Name;
+                final IAttributeSet temp1c = c1;
+
                 String groupString = ((AttributeSet) group).setIdxList().stream()
-                        .map(i -> "att" + i).collect(Collectors.joining(","));
+                        .map(i -> (temp1c.contains(i) ? temp1 : temp2) + ".att" + i).collect(Collectors.joining(","));
 
                 StringBuilder sb = new StringBuilder("CREATE TABLE TMP").append(newClusterName)
                         .append(" AS (SELECT SUM(").append(c1Name).append(".cnt1").append("*")
@@ -508,51 +512,58 @@ public class NewSmallDBInMemory implements AutoCloseable{
     }
 
     public static void main(String[] args) throws Exception {
-        NewSmallDBInMemory db = new NewSmallDBInMemory("adult.csv", 15, false, 4, 100);
+        try (NewSmallDBInMemory db =
+                new NewSmallDBInMemory("testdb/nursery.csv", 9, false, 4, 100)) {
 
-        Set<IAttributeSet> clus = new HashSet<>();
-        clus.add(new AttributeSet(new int[] {0, 1}, 15));
-        clus.add(new AttributeSet(new int[] {1, 2}, 15));
-        clus.add(new AttributeSet(new int[] {2, 3}, 15));
-        clus.add(new AttributeSet(new int[] {3, 4}, 15));
-        clus.add(new AttributeSet(new int[] {4, 5}, 15));
-        clus.add(new AttributeSet(new int[] {5, 6}, 15));
-        clus.add(new AttributeSet(new int[] {6, 7}, 15));
-        clus.add(new AttributeSet(new int[] {7, 8}, 15));
-        clus.add(new AttributeSet(new int[] {8, 9}, 15));
-        clus.add(new AttributeSet(new int[] {9, 10}, 15));
-        clus.add(new AttributeSet(new int[] {10, 11}, 15));
-        clus.add(new AttributeSet(new int[] {11, 12}, 15));
-        clus.add(new AttributeSet(new int[] {12, 13}, 15));
-        clus.add(new AttributeSet(new int[] {13, 14}, 15));
+            Set<IAttributeSet> clus = new HashSet<>();
 
-        DecompositionRunStatus dRunStatus = db.submitJob(clus);
+            clus.add(new AttributeSet(new int[] {0, 1, 3, 4, 6, 7, 8}, 9));
+            clus.add(new AttributeSet(new int[] {0, 1, 2, 3, 4, 7, 8}, 9));
+            clus.add(new AttributeSet(new int[] {0, 1, 3, 4, 5, 7, 8}, 9));
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        reader.readLine();
+            // clus.add(new AttributeSet(new int[] {3, 4}, 15));
+            // clus.add(new AttributeSet(new int[] {4, 5}, 15));
+            // clus.add(new AttributeSet(new int[] {5, 6}, 15));
+            // clus.add(new AttributeSet(new int[] {6, 7}, 15));
+            // clus.add(new AttributeSet(new int[] {7, 8}, 15));
+            // clus.add(new AttributeSet(new int[] {8, 9}, 15));
+            // clus.add(new AttributeSet(new int[] {9, 10}, 15));
+            // clus.add(new AttributeSet(new int[] {10, 11}, 15));
+            // clus.add(new AttributeSet(new int[] {11, 12}, 15));
+            // clus.add(new AttributeSet(new int[] {12, 13}, 15));
+            // clus.add(new AttributeSet(new int[] {13, 14}, 15));
 
-        dRunStatus = db.cancelJob(clus);
-        reader.readLine();
-        dRunStatus = db.submitJob(clus);
-        reader.readLine();
+            // DecompositionRunStatus dRunStatus = db.submitJob(clus);
+            System.out.println(db.submitJobSynchronous(clus).totalCellsInDecomposition);
+            System.out.println(db.submitJobSynchronous(clus).totalTuplesInDecomposition);
+            System.out.println(db.submitJobSynchronous(clus).spuriousTuples);
+            // BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+            // reader.readLine();
 
-        // synchronized (dRunStatus) {
-        // System.out.println(dRunStatus.status);
-        // try {
-        // dRunStatus.exception.printStackTrace();
-        // } catch (Exception e) {
-        // e.printStackTrace();
-        // }
-        // }
-        // clus = new HashSet<>();
-        // clus.add(new AttributeSet(new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, 15));
-        // clus.add(new AttributeSet(new int[] {9, 10, 11, 12, 13, 14}, 15));
-        // System.out.println(db.submitJobSynchronous(clus).spuriousTuples);
-        System.out.println(dRunStatus.status);
-        reader.readLine();
+            // dRunStatus = db.cancelJob(clus);
+            // reader.readLine();
+            // dRunStatus = db.submitJob(clus);
+            // reader.readLine();
 
-        db.close();
-        reader.close();
+            // // synchronized (dRunStatus) {
+            // // System.out.println(dRunStatus.status);
+            // // try {
+            // // dRunStatus.exception.printStackTrace();
+            // // } catch (Exception e) {
+            // // e.printStackTrace();
+            // // }
+            // // }
+            // // clus = new HashSet<>();
+            // // clus.add(new AttributeSet(new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, 15));
+            // // clus.add(new AttributeSet(new int[] {9, 10, 11, 12, 13, 14}, 15));
+            // // System.out.println(db.submitJobSynchronous(clus).spuriousTuples);
+            // System.out.println(dRunStatus.status);
+            // reader.readLine();
+
+
+            // db.close();
+            // reader.close();
+        }
     }
 }
 
