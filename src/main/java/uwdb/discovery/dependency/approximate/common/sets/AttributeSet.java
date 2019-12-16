@@ -66,8 +66,7 @@ public class AttributeSet implements IAttributeSet {
 	public void removeItemIdx(int index) {
 		int k = 1;
 		int i;
-		for (i = set.nextSetBit(0); i >= 0 & k++ < index; i = set.nextSetBit(i + 1))
-			;
+		for (i = set.nextSetBit(0); i >= 0 & k++ < index; i = set.nextSetBit(i + 1));
 		set.clear(i);
 	}
 
@@ -143,27 +142,27 @@ public class AttributeSet implements IAttributeSet {
 
 	@Override
 	public int hashCode() {
-//    	byte[] setByteArr = set.toByteArray();
-//    	int retVal = Arrays.hashCode(setByteArr); 
-//    	return   retVal;
+		// byte[] setByteArr = set.toByteArray();
+		// int retVal = Arrays.hashCode(setByteArr);
+		// return retVal;
 		return set.hashCode();
 	}
 
 	@Override
 	public boolean equals(Object obj) {
-//        AttributeSet other = (AttributeSet) obj;
-//        if(other.cardinality() != this.cardinality())
-//        	return false;
-//        
-//        for (int i = nextAttribute(0), j = other.nextAttribute(0);
-//             ((i != -1) || (j != -1));
-//             j = other.nextAttribute(i+1), i = nextAttribute(i+1)) {
-//            if(i != j)
-//            {
-//                return false;
-//            }
-//        }
-//        return true;
+		// AttributeSet other = (AttributeSet) obj;
+		// if(other.cardinality() != this.cardinality())
+		// return false;
+		//
+		// for (int i = nextAttribute(0), j = other.nextAttribute(0);
+		// ((i != -1) || (j != -1));
+		// j = other.nextAttribute(i+1), i = nextAttribute(i+1)) {
+		// if(i != j)
+		// {
+		// return false;
+		// }
+		// }
+		// return true;
 
 		if (obj instanceof AttributeSet) {
 			AttributeSet o = (AttributeSet) obj;
@@ -201,23 +200,38 @@ public class AttributeSet implements IAttributeSet {
 
 	}
 
-	public AttributeSet(int[] setlist, int numAttributes) {
+	public AttributeSet(List<Integer> setlist, int numAttributes) {
 		this(numAttributes);
 		for (int i : setlist) {
+			if (i >= numAttributes) {
+				throw new IllegalArgumentException(
+						"Attribute must be less than number of attribute");
+			}
 			this.set.set(i);
 		}
 	}
-	
+
+	public AttributeSet(int[] setlist, int numAttributes) {
+		this(numAttributes);
+		for (int i : setlist) {
+			if (i >= numAttributes) {
+				throw new IllegalArgumentException(
+						"Attribute must be less than number of attribute");
+			}
+			this.set.set(i);
+		}
+	}
+
 	public AttributeSet(AttributeSet o) {
 		this.currIterator = 0;
 		this.numAttributes = o.numAttributes;
 		this.set = new BitSet();
 		this.set = (BitSet) o.set.clone();
 	}
-	
+
 	public List<Integer> setIdxList() {
 		List<Integer> ret = new ArrayList<>();
-		for (int i = set.nextSetBit(0); i >= 0 && i < numAttributes; i = set.nextSetBit(i+1)) {
+		for (int i = set.nextSetBit(0); i >= 0 && i < numAttributes; i = set.nextSetBit(i + 1)) {
 			ret.add(i);
 		}
 		return ret;

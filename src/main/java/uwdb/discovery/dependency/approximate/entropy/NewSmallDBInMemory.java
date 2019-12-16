@@ -1,6 +1,7 @@
 package uwdb.discovery.dependency.approximate.entropy;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -27,7 +28,7 @@ import uwdb.discovery.dependency.approximate.common.sets.AttributeSet;
 import uwdb.discovery.dependency.approximate.common.sets.IAttributeSet;
 import uwdb.discovery.dependency.approximate.entropy.NewSmallDBInMemory.DecompositionRunStatus.StatusCode;
 
-public class NewSmallDBInMemory {
+public class NewSmallDBInMemory implements AutoCloseable{
     public static class CanceledJobException extends Exception {
         private static final long serialVersionUID = 1L;
     }
@@ -50,6 +51,8 @@ public class NewSmallDBInMemory {
     public static String TBL_NAME = "CSVTblEncoding";
 
     // Database information
+    public final String filename;
+    public final int numAtt;
     public final long numTuples;
     public final long numCells;
 
@@ -91,6 +94,8 @@ public class NewSmallDBInMemory {
         }
         numTuples = numTuples(threads[0].conn);
         numCells = numTuples * numAtt;
+        this.numAtt = numAtt;
+        this.filename = new File(file).getName();
     }
 
     public DecompositionRunStatus submitJob(Set<IAttributeSet> s) throws InterruptedException {
@@ -442,7 +447,7 @@ public class NewSmallDBInMemory {
     }
 
     public static class DecompositionRunStatus {
-        enum StatusCode {
+        public enum StatusCode {
             PENDING, RUNNING, FINISHED, FAILED, CANCELED;
         }
 
@@ -495,8 +500,8 @@ public class NewSmallDBInMemory {
         }
 
         public void add(IAttributeSet att, long tuples_cnt) {
-            largestRelation = Math.max(smallestRelation, tuples_cnt);
-            smallestRelation = Math.min(largestRelation, tuples_cnt);
+            largestRelation = Math.max(largestRelation, tuples_cnt);
+            smallestRelation = Math.min(smallestRelation, tuples_cnt);
             totalTuplesInDecomposition += tuples_cnt;
             totalCellsInDecomposition += tuples_cnt * att.cardinality();
         }
