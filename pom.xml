@@ -4,7 +4,7 @@
   <groupId>uwdb</groupId>
   <artifactId>MiningMVDs</artifactId>
   <packaging>jar</packaging>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0-SQLite</version>
   <name>MiningMVDs</name>
   <url>http://maven.apache.org</url>
   <properties>
