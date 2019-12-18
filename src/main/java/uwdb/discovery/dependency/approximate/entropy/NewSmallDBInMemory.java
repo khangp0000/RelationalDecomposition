@@ -63,7 +63,7 @@ public class NewSmallDBInMemory implements AutoCloseable {
     private int cacheMax;
 
     public NewSmallDBInMemory(String file, int numAtt, boolean hasHeader) throws Exception {
-        this(file, numAtt, hasHeader, Math.max(Runtime.getRuntime().availableProcessors() - 1, 1),
+        this(file, numAtt, hasHeader, Math.min(4, Math.max(Runtime.getRuntime().availableProcessors() - 1, 1)),
                 100);
     }
 
