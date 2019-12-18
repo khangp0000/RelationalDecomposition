@@ -85,11 +85,18 @@ public class NewSmallDBInMemory implements AutoCloseable {
             }
         };
 
+        int refdbidx = 0;;
         threads = new ClustersConsumer[numThread];
         for (int i = 0; i < numThread; ++i) {
-            String db_url = "jdbc:h2:mem:db" + DB_IDX.getAndIncrement() + ";LOCK_TIMEOUT=10000";
+            int dbidx = DB_IDX.getAndIncrement();
+            String db_url = "jdbc:h2:mem:db" + dbidx + ";LOCK_TIMEOUT=10000";
             threads[i] = new ClustersConsumer(i, db_url);
-            initDB(file, numAtt, hasHeader, threads[i].conn);
+            if (i == 0) {
+                initDB(file, numAtt, hasHeader, threads[i].conn);
+                refdbidx = dbidx;
+            } else {
+                initDBLinked(threads[i].conn, refdbidx);
+            }
             threads[i].start();
         }
         numTuples = numTuples(threads[0].conn);
@@ -202,6 +209,17 @@ public class NewSmallDBInMemory implements AutoCloseable {
                 return;
             }
         }
+    }
+
+    private void initDBLinked(Connection conn, int refdbidx) throws Exception {
+        Statement st = conn.createStatement();
+
+        StringBuilder sb = new StringBuilder("CREATE LINKED TABLE ").append(TBL_NAME)
+                .append(" ('org.h2.Driver', 'jdbc:h2:mem:db" + refdbidx + "', '" + USER + "', '"
+                        + PASS + "', '" + TBL_NAME + "') READONLY;");
+
+        st.executeUpdate(sb.toString());
+        st.close();
     }
 
     private static String processLine(CSVParser parser, String line, int numAtt,
@@ -349,7 +367,8 @@ public class NewSmallDBInMemory implements AutoCloseable {
                 final IAttributeSet temp1c = c1;
 
                 String groupString = ((AttributeSet) group).setIdxList().stream()
-                        .map(i -> (temp1c.contains(i) ? temp1 : temp2) + ".att" + i).collect(Collectors.joining(","));
+                        .map(i -> (temp1c.contains(i) ? temp1 : temp2) + ".att" + i)
+                        .collect(Collectors.joining(","));
 
                 StringBuilder sb = new StringBuilder("CREATE TABLE TMP").append(newClusterName)
                         .append(" AS (SELECT SUM(").append(c1Name).append(".cnt1").append("*")
