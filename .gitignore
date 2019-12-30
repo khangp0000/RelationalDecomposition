@@ -14,3 +14,9 @@
 # Maven
 log/
 target/
+
+# VSCode
+.vscode/
+
+# Test db
+testdb/
