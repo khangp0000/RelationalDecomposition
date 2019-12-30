@@ -414,7 +414,7 @@ public class NewSmallDBInMemory implements AutoCloseable {
             if (!rs.next()) {
                 throw new IllegalStateException("COUNT always return 1 row");
             }
-            int ret = rs.getInt(1);
+            long ret = rs.getLong(1);
             st.executeUpdate("DROP TABLE " + c1Name + ";");
             st.close();
 
