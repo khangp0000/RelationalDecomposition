@@ -415,8 +415,9 @@ public class NewSmallDBInMemory implements AutoCloseable {
             if (!rs.next()) {
                 throw new IllegalStateException("COUNT always return 1 row");
             }
-            int ret = rs.getInt(1);
+            long ret = rs.getLong(1);
             running_st = st;
+
             st.executeUpdate("DROP TABLE " + c1Name + ";");
             running_st = null;
             st.close();
@@ -456,7 +457,7 @@ public class NewSmallDBInMemory implements AutoCloseable {
                 throws SQLException {
             Statement st = conn.createStatement();
             String clusterTableName = clusterTableOnAttSet(attSet);
-            
+
             running_st = st;
             st.executeUpdate(new StringBuilder("CREATE TABLE ").append(clusterTableName)
                     .append(" AS SELECT DISTINCT ")
