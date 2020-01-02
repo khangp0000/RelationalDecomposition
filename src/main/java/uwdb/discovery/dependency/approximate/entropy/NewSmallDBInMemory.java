@@ -11,6 +11,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,6 +52,7 @@ public class NewSmallDBInMemory implements AutoCloseable {
     public static String TBL_NAME = "CSVTblEncoding";
 
     // Database information
+    public final List<String> header;
     public final String filename;
     public final int numAtt;
     public final long numTuples;
@@ -70,6 +72,10 @@ public class NewSmallDBInMemory implements AutoCloseable {
 
     public NewSmallDBInMemory(String file, int numAtt, boolean hasHeader, int numThread,
             int cacheNum) throws Exception {
+        List<String> tempHeader = new ArrayList<>(numAtt);
+        for (int i = 0; i < numAtt; ++i) {
+            tempHeader.add(null);
+        }
         masterdb = "db" + DB_IDX.getAndIncrement();
         String masterdb_url = "jdbc:sqlite:file:" + masterdb + "?mode=memory&cache=shared";
 
@@ -91,7 +97,8 @@ public class NewSmallDBInMemory implements AutoCloseable {
 
         threads = new ClustersConsumer[numThread];
         try (Connection masterConnection = DriverManager.getConnection(masterdb_url, USER, PASS)) {
-            initDB(file, numAtt, hasHeader, masterConnection);
+            initDB(file, numAtt, hasHeader, masterConnection, tempHeader);
+            header = Collections.unmodifiableList(tempHeader);
             for (int i = 0; i < numThread; ++i) {
                 String db_url = "jdbc:sqlite:file:db" + DB_IDX.getAndIncrement()
                         + "?mode=memory&cache=shared";
@@ -178,8 +185,8 @@ public class NewSmallDBInMemory implements AutoCloseable {
         st.close();
     }
 
-    private void initDB(String file, int numAtt, boolean hasHeader, Connection conn)
-            throws Exception {
+    private void initDB(String file, int numAtt, boolean hasHeader, Connection conn,
+            List<String> header) throws Exception {
         Statement st = conn.createStatement();
 
         StringBuilder sb = new StringBuilder("CREATE TABLE ").append(TBL_NAME).append(" (");
@@ -201,8 +208,14 @@ public class NewSmallDBInMemory implements AutoCloseable {
 
         BufferedReader reader = new BufferedReader(new FileReader(file));
         if (hasHeader) {
-            reader.readLine();
+            String[] parsedHeader = parser.parseLine(reader.readLine());
+            int size = Math.min(parsedHeader.length, header.size());
+            for (int i = 0; i < size; ++i) {
+                header.set(i, parsedHeader[i]);
+            }
         }
+
+        header = Collections.unmodifiableList(header);
 
         List<String> lines = new ArrayList<>(TUPLES_ADD_AT_A_TIME);
         while (true) {
