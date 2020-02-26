@@ -264,25 +264,23 @@ public class AcyclicSchemaEnumerator implements Iterator<AcyclicSchema> {
 									"Largest Relation", "#Relations", "#Spurious Tuples",
 									"DecompositionSizeinTuples", "DecompositionSizeInCells"));
 
-			NewSmallDBInMemory smallDB;
-			try {
-				smallDB = new NewSmallDBInMemory(dataFilePath, numAtts, false);
-			} catch (Exception e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-				return;
-			}
-			for (File sepFile : sepFiles) {
-				// read threshold from sep file name
 
-				Path pathObjToSepFile = Paths.get(sepFile.getPath());
-				double threshold =
-						getThresholdFromSepFile(pathObjToSepFile.getFileName().toString());
-				enumerateSingleSepFile(sepFile.getPath(), csvPrinter, numAtts, numRows, timeout,
-						threshold, TEST_SPURIOUS_TUPLES, dataFilePath, smallDB);
+			try (NewSmallDBInMemory smallDB =
+					new NewSmallDBInMemory(dataFilePath, numAtts, false)) {
+				for (File sepFile : sepFiles) {
+					// read threshold from sep file name
+
+					Path pathObjToSepFile = Paths.get(sepFile.getPath());
+					double threshold =
+							getThresholdFromSepFile(pathObjToSepFile.getFileName().toString());
+					enumerateSingleSepFile(sepFile.getPath(), csvPrinter, numAtts, numRows, timeout,
+							threshold, TEST_SPURIOUS_TUPLES, dataFilePath, smallDB);
+				}
+				csvPrinter.close();
+				// boolean testForSpuriousTuples, String pathToData
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
-			csvPrinter.close();
-			// boolean testForSpuriousTuples, String pathToData
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
