@@ -4,12 +4,13 @@
   <groupId>uwdb</groupId>
   <artifactId>MiningMVDs</artifactId>
   <packaging>jar</packaging>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.4-SQLite</version>
   <name>MiningMVDs</name>
   <url>http://maven.apache.org</url>
   <properties>
     <encoding>UTF-8</encoding>
   </properties>
+
   <dependencies>
     <dependency>
       <groupId>junit</groupId>
@@ -38,13 +39,21 @@
       <artifactId>h2</artifactId>
       <version>1.4.200</version>
     </dependency>
-    
+
     <!-- https://mvnrepository.com/artifact/com.opencsv/opencsv -->
     <dependency>
       <groupId>com.opencsv</groupId>
       <artifactId>opencsv</artifactId>
       <version>5.0</version>
     </dependency>
+
+    <!-- https://mvnrepository.com/artifact/org.xerial/sqlite-jdbc -->
+    <dependency>
+      <groupId>org.xerial</groupId>
+      <artifactId>sqlite-jdbc</artifactId>
+      <version>3.28.0</version>
+    </dependency>
+
 
   </dependencies>
 
@@ -55,7 +64,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.8.0</version>
         <configuration>
-          <source>1.8</source>
+          <source>11</source>
           <target>11</target>
         </configuration>
       </plugin>

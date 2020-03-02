@@ -11,6 +11,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,7 +36,7 @@ public class NewSmallDBInMemory implements AutoCloseable {
 
     static final String SEP = ",";
     // JDBC driver name and database URL
-    static final String JDBC_DRIVER = "org.h2.Driver";
+    static final String JDBC_DRIVER = "org.sqlite.JDBC";
 
     // Database credentials
     static final String USER = "sa";
@@ -51,6 +52,7 @@ public class NewSmallDBInMemory implements AutoCloseable {
     public static String TBL_NAME = "CSVTblEncoding";
 
     // Database information
+    public final List<String> header;
     public final String filename;
     public final int numAtt;
     public final long numTuples;
@@ -61,14 +63,22 @@ public class NewSmallDBInMemory implements AutoCloseable {
     private final BlockingQueue<Set<IAttributeSet>> jobs;
     private final Map<Set<IAttributeSet>, DecompositionRunStatus> statusMap;
     private int cacheMax;
+    private final String masterdb;
 
     public NewSmallDBInMemory(String file, int numAtt, boolean hasHeader) throws Exception {
-        this(file, numAtt, hasHeader, Math.min(4, Math.max(Runtime.getRuntime().availableProcessors() - 1, 1)),
-                100);
+        this(file, numAtt, hasHeader,
+                Math.min(4, Math.max(Runtime.getRuntime().availableProcessors() - 1, 1)), 100);
     }
 
     public NewSmallDBInMemory(String file, int numAtt, boolean hasHeader, int numThread,
             int cacheNum) throws Exception {
+        List<String> tempHeader = new ArrayList<>(numAtt);
+        for (int i = 0; i < numAtt; ++i) {
+            tempHeader.add(null);
+        }
+        masterdb = "db" + DB_IDX.getAndIncrement();
+        String masterdb_url = "jdbc:sqlite:file:" + masterdb + "?mode=memory&cache=shared";
+
         if (numThread < 1 || cacheNum < 1) {
             throw new IllegalArgumentException();
         }
@@ -87,18 +97,20 @@ public class NewSmallDBInMemory implements AutoCloseable {
 
         int refdbidx = 0;;
         threads = new ClustersConsumer[numThread];
-        for (int i = 0; i < numThread; ++i) {
-            int dbidx = DB_IDX.getAndIncrement();
-            String db_url = "jdbc:h2:mem:db" + dbidx + ";LOCK_TIMEOUT=10000";
-            threads[i] = new ClustersConsumer(i, db_url);
-            if (i == 0) {
-                initDB(file, numAtt, hasHeader, threads[i].conn);
-                refdbidx = dbidx;
-            } else {
-                initDBLinked(threads[i].conn, refdbidx);
+        try (Connection masterConnection = DriverManager.getConnection(masterdb_url, USER, PASS)) {
+            initDB(file, numAtt, hasHeader, masterConnection, tempHeader);
+            header = Collections.unmodifiableList(tempHeader);
+            for (int i = 0; i < numThread; ++i) {
+                String db_url = "jdbc:sqlite:file:db" + DB_IDX.getAndIncrement()
+                        + "?mode=memory&cache=shared";
+                threads[i] = new ClustersConsumer(i, db_url);
+                attachMasterDB(threads[i].conn);
+                threads[i].start();
             }
-            threads[i].start();
+        } catch (SQLException e) {
+            throw e;
         }
+
         numTuples = numTuples(threads[0].conn);
         numCells = numTuples * numAtt;
         this.numAtt = numAtt;
@@ -165,8 +177,17 @@ public class NewSmallDBInMemory implements AutoCloseable {
         }
     }
 
-    private void initDB(String file, int numAtt, boolean hasHeader, Connection conn)
-            throws Exception {
+    private void attachMasterDB(Connection conn) throws Exception {
+        Statement st = conn.createStatement();
+        st.executeUpdate("attach 'file:" + masterdb + "?mode=memory&cache=shared' as " + masterdb);
+        st.executeUpdate("CREATE TABLE " + TBL_NAME + " AS SELECT DISTINCT * FROM " + masterdb + "."
+                + TBL_NAME);
+        st.executeUpdate("DETACH DATABASE " + masterdb);
+        st.close();
+    }
+
+    private void initDB(String file, int numAtt, boolean hasHeader, Connection conn,
+            List<String> header) throws Exception {
         Statement st = conn.createStatement();
 
         StringBuilder sb = new StringBuilder("CREATE TABLE ").append(TBL_NAME).append(" (");
@@ -188,8 +209,14 @@ public class NewSmallDBInMemory implements AutoCloseable {
 
         BufferedReader reader = new BufferedReader(new FileReader(file));
         if (hasHeader) {
-            reader.readLine();
+            String[] parsedHeader = parser.parseLine(reader.readLine());
+            int size = Math.min(parsedHeader.length, header.size());
+            for (int i = 0; i < size; ++i) {
+                header.set(i, parsedHeader[i]);
+            }
         }
+
+        header = Collections.unmodifiableList(header);
 
         List<String> lines = new ArrayList<>(TUPLES_ADD_AT_A_TIME);
         while (true) {
@@ -267,12 +294,11 @@ public class NewSmallDBInMemory implements AutoCloseable {
 
     private class ClustersConsumer extends Thread {
         private final int idx;
-        private final String db_url;
         private Connection conn;
+        private Statement running_st;
 
         public ClustersConsumer(int idx, String db_url) throws SQLException {
             this.idx = idx;
-            this.db_url = db_url;
             conn = DriverManager.getConnection(db_url, USER, PASS);
         }
 
@@ -345,7 +371,8 @@ public class NewSmallDBInMemory implements AutoCloseable {
             IAttributeSet c1 = clusters.remove(size - 1);
             String c1Name = clusterTableOnAttSet(c1);
 
-            dInfo.add(c1, generateProjectionTables((AttributeSet) c1, conn));
+            long count = generateProjectionTables((AttributeSet) c1, conn);
+            dInfo.add(c1, count);
             Statement st = conn.createStatement();
             while ((size = clusters.size()) > 0) {
 
@@ -353,8 +380,8 @@ public class NewSmallDBInMemory implements AutoCloseable {
                 String c2Name = clusterTableOnAttSet(c2);
 
                 dInfo.add(c2, generateProjectionTables((AttributeSet) c2, conn));
-
                 IAttributeSet newCluster = c1.union(c2);
+                IAttributeSet join = c1.intersect(c2);
                 String newClusterName = clusterTableOnAttSet(newCluster);
 
                 IAttributeSet group = new AttributeSet(c1.length());
@@ -366,47 +393,58 @@ public class NewSmallDBInMemory implements AutoCloseable {
                 final String temp2 = c2Name;
                 final IAttributeSet temp1c = c1;
 
+                String joiString = ((AttributeSet) join).setIdxList().stream()
+                        .map(i -> temp1 + ".att" + i + " = " + temp2 + ".att" + i)
+                        .collect(Collectors.joining(" AND "));
+
                 String groupString = ((AttributeSet) group).setIdxList().stream()
                         .map(i -> (temp1c.contains(i) ? temp1 : temp2) + ".att" + i)
                         .collect(Collectors.joining(","));
 
                 StringBuilder sb = new StringBuilder("CREATE TABLE TMP").append(newClusterName)
-                        .append(" AS (SELECT SUM(").append(c1Name).append(".cnt1").append("*")
-                        .append(c2Name).append(".cnt2").append(") AS cnt");
+                        .append(" AS SELECT SUM(").append(c1Name).append(".cnt").append("*")
+                        .append(c2Name).append(".cnt").append(") AS cnt");
 
                 if (!groupString.isEmpty()) {
                     sb.append(",").append(groupString);
                 }
 
-                sb.append(" FROM ").append(c1Name).append(" NATURAL JOIN ").append(c2Name);
+                sb.append(" FROM ").append(c1Name).append(", ").append(c2Name);
+
+                if (!joiString.isEmpty()) {
+                    sb.append(" WHERE ").append(joiString);
+                }
 
                 if (!groupString.isEmpty()) {
                     sb.append(" GROUP BY ").append(groupString);
                 }
 
-                sb.append(");");
+                sb.append(";");
 
-
-                st.addBatch("ALTER TABLE " + c1Name + " ALTER COLUMN cnt RENAME TO cnt1;");
-                st.addBatch("ALTER TABLE " + c2Name + " ALTER COLUMN cnt RENAME TO cnt2;");
                 st.addBatch(sb.toString());
                 st.addBatch("DROP TABLE " + c1Name + ";");
                 st.addBatch("DROP TABLE " + c2Name + ";");
                 st.addBatch(
                         "ALTER TABLE TMP" + newClusterName + " RENAME TO " + newClusterName + ";");
-
+                running_st = st;
                 st.executeBatch();
+                running_st = null;
 
                 c1 = newCluster;
                 c1Name = newClusterName;
             }
 
+            running_st = st;
             ResultSet rs = st.executeQuery("SELECT SUM(cnt) FROM " + c1Name);
+            running_st = null;
             if (!rs.next()) {
                 throw new IllegalStateException("COUNT always return 1 row");
             }
-            int ret = rs.getInt(1);
+            long ret = rs.getLong(1);
+            running_st = st;
+
             st.executeUpdate("DROP TABLE " + c1Name + ";");
+            running_st = null;
             st.close();
 
             dInfo.spuriousTuples = ret - numTuples;
@@ -415,20 +453,24 @@ public class NewSmallDBInMemory implements AutoCloseable {
 
         public synchronized void stopRunning() throws SQLException {
             if (conn == null) {
-                throw new IllegalStateException("Consumming thread closedd");
+                throw new IllegalStateException("Consumming thread closed");
             }
-            Connection temp = DriverManager.getConnection(db_url, USER, PASS);
-            conn.close();
-            conn = temp;
-            Statement st = conn.createStatement();
+            Statement st = running_st;
+
+            if (st != null) {
+                st.cancel();
+            }
+
+            st = conn.createStatement();
             ResultSet rs = conn.getMetaData().getTables(null, null, "CLUSTER_" + idx + "%", null);
             List<String> cl_tables = new ArrayList<>();
             while (rs.next()) {
                 cl_tables.add(rs.getString(3));
             }
-            if (!cl_tables.isEmpty())
-                st.executeUpdate(
-                        cl_tables.stream().collect(Collectors.joining(",", "DROP TABLE ", ";")));
+            for (String table : cl_tables) {
+                st.addBatch("DROP TABLE IF EXISTS " + table);
+            }
+            st.executeBatch();
             st.close();
         }
 
@@ -440,11 +482,13 @@ public class NewSmallDBInMemory implements AutoCloseable {
                 throws SQLException {
             Statement st = conn.createStatement();
             String clusterTableName = clusterTableOnAttSet(attSet);
+
+            running_st = st;
             st.executeUpdate(new StringBuilder("CREATE TABLE ").append(clusterTableName)
-                    .append(" AS (SELECT DISTINCT ")
+                    .append(" AS SELECT DISTINCT ")
                     .append(attSet.setIdxList().stream().map(i -> "att" + i)
                             .collect(Collectors.joining(",")))
-                    .append(",CAST(1 AS BIGINT) AS cnt FROM ").append(TBL_NAME).append(");")
+                    .append(",CAST(1 AS BIGINT) AS cnt FROM ").append(TBL_NAME).append(";")
                     .toString());
 
             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM " + clusterTableName);
@@ -452,6 +496,7 @@ public class NewSmallDBInMemory implements AutoCloseable {
                 throw new IllegalStateException("COUNT always return 1 row");
             }
             long ret = rs.getLong(1);
+            running_st = null;
             st.close();
             return ret;
         }
@@ -532,13 +577,13 @@ public class NewSmallDBInMemory implements AutoCloseable {
 
     public static void main(String[] args) throws Exception {
         try (NewSmallDBInMemory db =
-                new NewSmallDBInMemory("testdb/nursery.csv", 9, false, 4, 100)) {
+                new NewSmallDBInMemory("FAVORITA_train.csv", 4, true, 4, 100)) {
 
             Set<IAttributeSet> clus = new HashSet<>();
 
-            clus.add(new AttributeSet(new int[] {0, 1, 3, 4, 6, 7, 8}, 9));
-            clus.add(new AttributeSet(new int[] {0, 1, 2, 3, 4, 7, 8}, 9));
-            clus.add(new AttributeSet(new int[] {0, 1, 3, 4, 5, 7, 8}, 9));
+            clus.add(new AttributeSet(new int[] {0, 2, 3}, 4));
+            clus.add(new AttributeSet(new int[] {1, 2, 3}, 4));
+            // clus.add(new AttributeSet(new int[] {0, 1, 3, 4, 5, 7, 8}, 9));
 
             // clus.add(new AttributeSet(new int[] {3, 4}, 15));
             // clus.add(new AttributeSet(new int[] {4, 5}, 15));
