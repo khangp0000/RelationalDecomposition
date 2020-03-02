@@ -95,6 +95,7 @@ public class NewSmallDBInMemory implements AutoCloseable {
             }
         };
 
+        int refdbidx = 0;;
         threads = new ClustersConsumer[numThread];
         try (Connection masterConnection = DriverManager.getConnection(masterdb_url, USER, PASS)) {
             initDB(file, numAtt, hasHeader, masterConnection, tempHeader);
@@ -235,6 +236,17 @@ public class NewSmallDBInMemory implements AutoCloseable {
                 return;
             }
         }
+    }
+
+    private void initDBLinked(Connection conn, int refdbidx) throws Exception {
+        Statement st = conn.createStatement();
+
+        StringBuilder sb = new StringBuilder("CREATE LINKED TABLE ").append(TBL_NAME)
+                .append(" ('org.h2.Driver', 'jdbc:h2:mem:db" + refdbidx + "', '" + USER + "', '"
+                        + PASS + "', '" + TBL_NAME + "') READONLY;");
+
+        st.executeUpdate(sb.toString());
+        st.close();
     }
 
     private static String processLine(CSVParser parser, String line, int numAtt,
